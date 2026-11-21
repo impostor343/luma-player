@@ -1,9 +1,12 @@
-name: Build LumaPlayer APK from ZIP
+name: Build Direct LumaPlayer APK
 
 on:
   push:
     branches: [ main, master ]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build-apk:
@@ -42,9 +45,21 @@ jobs:
         working-directory: LumaPlayer
         run: gradle assembleDebug --stacktrace
 
-      - name: Upload Debug APK Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: LumaPlayer-debug-apk
-          path: LumaPlayer/app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
+      - name: Verify APK Integrity & Signature
+        run: |
+          APK_PATH="LumaPlayer/app/build/outputs/apk/debug/app-debug.apk"
+          BUILD_TOOLS=$(ls -d "$ANDROID_HOME/build-tools/"* | sort -V | tail -n 1)
+          echo "Using build-tools: $BUILD_TOOLS"
+          "$BUILD_TOOLS/aapt2" dump badging "$APK_PATH" | head -n 10
+          "$BUILD_TOOLS/apksigner" verify --verbose "$APK_PATH"
+          cp "$APK_PATH" LumaPlayer-debug.apk
+          ls -lh LumaPlayer-debug.apk
+
+      - name: Publish Direct APK to GitHub Releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="build-${{ github.run_number }}"
+          gh release create "$TAG" LumaPlayer-debug.apk \
+            --title "LumaPlayer Build #${{ github.run_number }}" \
+            --notes "Direct signed debug APK (verified with aapt2 & apksigner)."
